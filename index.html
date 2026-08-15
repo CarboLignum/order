@@ -448,8 +448,19 @@
         })});
     }).then(function(r){ if(!r.ok) throw 0; return r.json(); })
       .then(function(d){
-        var raw=d.candidates[0].content.parts[0].text;
-        apply(JSON.parse(raw));
+        // The worker parses the model answer and returns the order itself:
+        // { tuotteet:[...], epaselva:"..." }. This used to reach for the raw
+        // Gemini envelope - d.candidates[0].content.parts[0].text - which does
+        // not exist here, so every recording ended in "Ei onnistunut" no matter
+        // what was said or in which language. The old shape is still accepted in
+        // case an older worker is ever in front of this page.
+        if (d && d.candidates) {
+          apply(JSON.parse(d.candidates[0].content.parts[0].text));
+        } else if (d && typeof d === "object") {
+          apply(d);
+        } else {
+          throw 0;
+        }
       })
       .catch(function(){ reset("Ei onnistunut. Kokeile uudelleen tai valitse listalta."); })
       .finally(function(){ busy=false; });
