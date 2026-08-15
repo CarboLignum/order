@@ -437,14 +437,29 @@
   function finishRec(){
     if(!chunks.length || (Date.now()-t0)<800){ reset("Liian lyhyt. Paina ja sano tilauksesi."); return; }
     busy=true; vTitle.textContent="Käsittelen…"; vHint.textContent="hetki";
-    new Blob(chunks).arrayBuffer().then(function(b){
-      var AC=window.AudioContext||window.webkitAudioContext;
-      return new AC().decodeAudioData(b);
-    }).then(function(a){
+    var type = (rec && rec.mimeType) ? rec.mimeType.split(";")[0] : "audio/webm";
+    new Blob(chunks, { type: type }).arrayBuffer().then(function(b){
+      // Same two phone problems as on the site: older Safari hands back no
+      // promise from decodeAudioData, and a format it will not decode is still
+      // perfectly readable by the model. Neither should cost the recording.
+      return new Promise(function(resolve, reject){
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) { reject(0); return; }
+        var ctx = new AC();
+        if (ctx.state === "suspended" && ctx.resume) { try { ctx.resume(); } catch(e){} }
+        var p;
+        try { p = ctx.decodeAudioData(b, resolve, reject); } catch(e) { reject(e); return; }
+        if (p && typeof p.then === "function") { p.then(resolve, reject); }
+      }).then(function(a){
+        return { mimeType:"audio/wav", data:b64(wav(a,16000)) };
+      }, function(){
+        return { mimeType: type, data: b64(b) };
+      });
+    }).then(function(part){
       return fetch(API,{ method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
           mode:"order",
-          contents:[{role:"user",parts:[{inlineData:{mimeType:"audio/wav",data:b64(wav(a,16000))}}]}]
+          contents:[{role:"user",parts:[{inlineData:part}]}]
         })});
     }).then(function(r){ if(!r.ok) throw 0; return r.json(); })
       .then(function(d){
